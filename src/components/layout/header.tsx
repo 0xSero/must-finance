@@ -7,6 +7,19 @@ import { ShoppingCart, Menu, User, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { LanguageSwitcher } from './language-switcher';
+import { useCartStore } from '@/store/cart-store';
+
+function CartBadge() {
+  const totalItems = useCartStore((state) => state.getTotalItems());
+
+  if (totalItems === 0) return null;
+
+  return (
+    <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
+      {totalItems}
+    </span>
+  );
+}
 
 export function Header() {
   const t = useTranslations();
@@ -44,9 +57,7 @@ export function Header() {
           <Link href="/cart">
             <Button variant="ghost" size="icon" className="relative">
               <ShoppingCart className="h-5 w-5" />
-              <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground">
-                0
-              </span>
+              <CartBadge />
             </Button>
           </Link>
 
