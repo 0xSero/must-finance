@@ -1,0 +1,377 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  password      String?
+  emailVerified DateTime?
+  image         String?
+  role          UserRole  @default(CUSTOMER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  orders        Order[]
+  cart          CartItem[]
+  addresses     Address[]
+  refundRequests RefundRequest[]
+  supportTickets SupportTicket[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  CUSTOMER
+  ADMIN
+  SUPPORT
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String   @db.Text
+  price       Float
+  compareAtPrice Float?
+  sku         String   @unique
+  barcode     String?
+  images      String[]
+  category    String
+  tags        String[]
+  isVisible   Boolean  @default(true)
+  isFeatured  Boolean  @default(false)
+
+  // SEO
+  metaTitle       String?
+  metaDescription String?
+
+  // Translations stored as JSON
+  translations Json?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  inventory   Inventory?
+  orderItems  OrderItem[]
+  cartItems   CartItem[]
+
+  // Marketplace listings
+  allegroListings   AllegroListing[]
+  amazonListings    AmazonListing[]
+
+  @@map("products")
+}
+
+model Inventory {
+  id              String   @id @default(cuid())
+  productId       String   @unique
+  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  quantity        Int      @default(0)
+  lowStockThreshold Int    @default(10)
+  reserved        Int      @default(0) // Items in carts but not ordered
+
+  // Supplier info for auto-reordering
+  supplierName    String?
+  supplierSku     String?
+  supplierUrl     String?
+  reorderQuantity Int      @default(50)
+  autoReorder     Boolean  @default(false)
+
+  lastRestocked   DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("inventory")
+}
+
+model Order {
+  id              String      @id @default(cuid())
+  orderNumber     String      @unique
+  userId          String?
+  user            User?       @relation(fields: [userId], references: [id])
+
+  status          OrderStatus @default(PENDING)
+  paymentStatus   PaymentStatus @default(PENDING)
+  paymentMethod   PaymentMethod
+
+  subtotal        Float
+  tax             Float       @default(0)
+  shipping        Float       @default(0)
+  total           Float
+
+  currency        String      @default("PLN")
+
+  // Shipping address
+  shippingAddress Address?    @relation("shipping", fields: [shippingAddressId], references: [id])
+  shippingAddressId String?
+
+  // Billing address
+  billingAddress  Address?    @relation("billing", fields: [billingAddressId], references: [id])
+  billingAddressId String?
+
+  // Customer info (for guest checkout)
+  customerEmail   String
+  customerName    String
+  customerPhone   String?
+
+  // Payment
+  stripePaymentIntentId String?
+  blikTransactionId     String?
+
+  // Tracking
+  trackingNumber  String?
+  trackingCarrier String?
+
+  notes           String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  completedAt     DateTime?
+
+  items           OrderItem[]
+  refundRequests  RefundRequest[]
+
+  @@map("orders")
+}
+
+enum OrderStatus {
+  PENDING
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum PaymentMethod {
+  STRIPE_CARD
+  BLIK
+  BANK_TRANSFER
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  quantity  Int
+  price     Float   // Price at time of purchase
+  total     Float
+
+  createdAt DateTime @default(now())
+
+  @@map("order_items")
+}
+
+model CartItem {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  quantity  Int      @default(1)
+
+  // For guest carts (before login)
+  sessionId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, productId])
+  @@unique([sessionId, productId])
+  @@map("cart_items")
+}
+
+model Address {
+  id          String  @id @default(cuid())
+  userId      String?
+  user        User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  firstName   String
+  lastName    String
+  company     String?
+  address1    String
+  address2    String?
+  city        String
+  state       String?
+  postalCode  String
+  country     String
+  phone       String?
+
+  isDefault   Boolean @default(false)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  shippingOrders Order[] @relation("shipping")
+  billingOrders  Order[] @relation("billing")
+
+  @@map("addresses")
+}
+
+model RefundRequest {
+  id          String        @id @default(cuid())
+  orderId     String
+  order       Order         @relation(fields: [orderId], references: [id])
+
+  userId      String
+  user        User          @relation(fields: [userId], references: [id])
+
+  reason      String        @db.Text
+  amount      Float
+  status      RefundStatus  @default(PENDING)
+
+  adminNotes  String?       @db.Text
+  processedBy String?
+  processedAt DateTime?
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@map("refund_requests")
+}
+
+enum RefundStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PROCESSED
+}
+
+model SupportTicket {
+  id          String         @id @default(cuid())
+  userId      String?
+  user        User?          @relation(fields: [userId], references: [id])
+
+  email       String
+  name        String
+  subject     String
+  message     String         @db.Text
+  status      TicketStatus   @default(OPEN)
+  priority    TicketPriority @default(NORMAL)
+
+  orderId     String?
+
+  adminNotes  String?        @db.Text
+  assignedTo  String?
+
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  closedAt    DateTime?
+
+  @@map("support_tickets")
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_FOR_CUSTOMER
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+// Marketplace Integrations
+
+model AllegroListing {
+  id          String   @id @default(cuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  allegroId   String   @unique
+  listingUrl  String?
+
+  isActive    Boolean  @default(true)
+  price       Float
+  quantity    Int
+
+  lastSynced  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("allegro_listings")
+}
+
+model AmazonListing {
+  id          String   @id @default(cuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  asin        String   @unique
+  sku         String
+  listingUrl  String?
+
+  isActive    Boolean  @default(true)
+  price       Float
+  quantity    Int
+
+  lastSynced  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("amazon_listings")
+}
+
+model SupplierOrder {
+  id              String              @id @default(cuid())
+  supplierName    String
+  productSku      String
+  productName     String
+  quantity        Int
+  unitPrice       Float
+  totalPrice      Float
+
+  status          SupplierOrderStatus @default(PENDING)
+
+  // For Aliexpress/Alibaba
+  platformOrderId String?
+  trackingNumber  String?
+
+  estimatedDelivery DateTime?
+  actualDelivery    DateTime?
+
+  notes           String?            @db.Text
+
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@map("supplier_orders")
+}
+
+enum SupplierOrderStatus {
+  PENDING
+  ORDERED
+  SHIPPED
+  RECEIVED
+  CANCELLED
+}

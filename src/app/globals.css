@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 10% 10%; /* #1b1b1b */
+    --foreground: 0 0% 95%;
+
+    --card: 210 10% 15%; /* #303030 */
+    --card-foreground: 0 0% 95%;
+
+    --popover: 210 10% 15%; /* #303030 */
+    --popover-foreground: 0 0% 95%;
+
+    --primary: 270 80% 60%; /* Purple */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 10% 20%;
+    --secondary-foreground: 0 0% 95%;
+
+    --muted: 210 10% 20%;
+    --muted-foreground: 0 0% 60%;
+
+    --accent: 270 80% 60%; /* Purple */
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 210 10% 25%;
+    --input: 210 10% 25%;
+    --ring: 270 80% 60%; /* Purple */
+
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--background));
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted));
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--primary));
+}
+
+/* RTL Support for Arabic */
+[dir='rtl'] {
+  direction: rtl;
+}
