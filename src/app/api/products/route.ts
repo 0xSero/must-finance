@@ -6,12 +6,17 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const category = searchParams.get('category');
     const search = searchParams.get('search');
+    const includeHidden = searchParams.get('includeHidden') === 'true';
+    const includeInventory = searchParams.get('includeInventory') === 'true';
     const limit = parseInt(searchParams.get('limit') || '50');
     const offset = parseInt(searchParams.get('offset') || '0');
 
-    const where: any = {
-      isVisible: true,
-    };
+    const where: any = {};
+
+    // Only filter by visibility if includeHidden is false (default behavior)
+    if (!includeHidden) {
+      where.isVisible = true;
+    }
 
     if (category) {
       where.category = category;
@@ -34,7 +39,7 @@ export async function GET(request: Request) {
           createdAt: 'desc',
         },
         include: {
-          inventory: true,
+          inventory: includeInventory,
         },
       }),
       db.product.count({ where }),
