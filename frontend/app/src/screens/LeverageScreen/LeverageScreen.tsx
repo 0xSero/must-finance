@@ -217,7 +217,7 @@ export function LeverageScreen() {
                     <TextButton
                       label={`Max ${fmtnum(maxAmount, getTokenDisplayDecimals(collateral.symbol))} ${collateral.name}`}
                       onClick={() => {
-                        depositPreLeverage.setValue(dn.toString(maxAmount));
+                        depositPreLeverage.setValue(dn.toString(maxAmount, { digits: 18 }));
                       }}
                     />
                   )

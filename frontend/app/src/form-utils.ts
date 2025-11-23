@@ -180,7 +180,7 @@ export function useInputFieldValue(
           onFocusChange?.({ focused: true, parsed, value });
         },
         onChange: setValue,
-        value: focused || !parsed || !value.trim() ? value : format(parsed),
+        value: value, // Always show the raw value to preserve precision visibility
       },
       isEmpty: value.trim() === "",
       isFocused: focused,

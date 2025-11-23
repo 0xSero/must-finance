@@ -299,7 +299,7 @@ export function PanelUpdate({
                       <TextButton
                         label={`Max ${fmtnum(boldBalance, 2)} ${WHITE_LABEL_CONFIG.tokens.mainToken.symbol}`}
                         onClick={() => {
-                          setValue(dn.toString(boldBalance));
+                          setValue(dn.toString(boldBalance, { digits: 18 }));
                         }}
                       />
                     )
@@ -308,7 +308,7 @@ export function PanelUpdate({
                     <TextButton
                       label={`Max ${fmtnum(sboldPosition.sbold, 2)} ${WHITE_LABEL_CONFIG.tokens.otherTokens.sbold.symbol}`}
                       onClick={() => {
-                        setValue(dn.toString(sboldPosition.sbold));
+                        setValue(dn.toString(sboldPosition.sbold, { digits: 18 }));
                       }}
                     />
                   ),

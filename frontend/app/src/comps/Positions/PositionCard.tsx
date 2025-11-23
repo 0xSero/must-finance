@@ -4,7 +4,7 @@ import { IconArrowRight, LoadingSurface } from "@liquity2/uikit";
 import { a, useSpring } from "@react-spring/web";
 import Link from "next/link";
 import { useState } from "react";
-import { css, cx } from "../../../styled-system/css";
+import { css, cx } from "@/styled-system/css";
 
 type Cell = {
   label: ReactNode;

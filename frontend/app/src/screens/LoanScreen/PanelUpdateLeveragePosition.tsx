@@ -215,7 +215,7 @@ export function PanelUpdateLeveragePosition({
                   <TextButton
                     label={`Max ${fmtnum(collMax, getTokenDisplayDecimals(collToken.symbol))} ${collToken.name}`}
                     onClick={() => {
-                      depositChange.setValue(dn.toString(collMax));
+                      depositChange.setValue(dn.toString(collMax, { digits: 18 }));
                     }}
                   />
                 ),

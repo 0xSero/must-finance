@@ -80,7 +80,7 @@ export function BorrowScreen() {
       const isAboveMax = parsed && dn.gt(parsed, maxCollDeposit);
       return {
         parsed: isAboveMax ? maxCollDeposit : parsed,
-        value: isAboveMax ? dn.toString(maxCollDeposit) : value,
+        value: isAboveMax ? dn.toString(maxCollDeposit, { digits: 18 }) : value,
       };
     },
   });
@@ -318,7 +318,7 @@ export function BorrowScreen() {
                 <TextButton
                   label={`Max ${fmtnum(maxAmount, getTokenDisplayDecimals(collateral.symbol))} ${collateral.name}`}
                   onClick={() => {
-                    deposit.setValue(dn.toString(maxAmount));
+                    deposit.setValue(dn.toString(maxAmount, { digits: 18 }));
                   }}
                 />
               ),

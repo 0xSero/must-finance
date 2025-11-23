@@ -1,4 +1,5 @@
-import type { FlowDeclaration } from "@/src/services/TransactionFlow";
+import type { FlowDeclaration, FlowParams } from "@/src/services/TransactionFlow";
+import type { Address } from "@/src/types";
 
 import { Amount } from "@/src/comps/Amount/Amount";
 import { ETH_GAS_COMPENSATION } from "@/src/constants";
@@ -42,11 +43,61 @@ const RequestSchema = createRequestSchema(
   },
 );
 
-export function convert18ToDecimals(amount: bigint, decimals: number): bigint {
-  return amount / (10n ** BigInt(18 - decimals));
+export function convert18ToDecimals(
+  amount: bigint,
+  decimals: number,
+  round: "down" | "up" = "down",
+): bigint {
+  const divisor = 10n ** BigInt(18 - decimals);
+  if (round === "down") {
+    return amount / divisor; // Integer division truncates (rounds down)
+  } else {
+    // Round up: (amount + divisor - 1) / divisor
+    return (amount + divisor - 1n) / divisor;
+  }
 }
 
 export type OpenBorrowPositionRequest = v.InferOutput<typeof RequestSchema>;
+
+async function resolveBorrowController(ctx: FlowParams<OpenBorrowPositionRequest>) {
+  const branch = getBranch(ctx.request.branchId);
+
+  const zapperAddress = branch.decimals < 18
+    ? branch.contracts.LeverageWrappedTokenZapper.address
+    : branch.contracts.LeverageLSTZapper.address;
+
+  const txCollAmount = branch.decimals < 18
+    ? convert18ToDecimals(ctx.request.collAmount[0], branch.decimals, "down")
+    : ctx.request.collAmount[0];
+
+  let useBorrowerOperations = zapperAddress === ADDRESS_ZERO;
+
+  if (!useBorrowerOperations) {
+    try {
+      const zapperAllowance = await readContract(ctx.wagmiConfig, {
+        ...branch.contracts.CollToken,
+        functionName: "allowance",
+        args: [zapperAddress, branch.contracts.BorrowerOperations.address],
+      });
+      useBorrowerOperations ||= zapperAllowance < txCollAmount;
+    } catch (error) {
+      console.warn("Failed to read zapper allowance, falling back to BorrowerOperations:", error);
+      useBorrowerOperations = true;
+    }
+  }
+
+  const controllerAddress: Address = useBorrowerOperations
+    ? branch.contracts.BorrowerOperations.address
+    : zapperAddress;
+
+  return {
+    branch,
+    controllerAddress,
+    txCollAmount,
+    useBorrowerOperations,
+    zapperAddress,
+  };
+}
 
 export const openBorrowPosition: FlowDeclaration<OpenBorrowPositionRequest> = {
   title: "Review & Send Transaction",
@@ -228,6 +279,36 @@ export const openBorrowPosition: FlowDeclaration<OpenBorrowPositionRequest> = {
   },
 
   steps: {
+    // Reset approval to 0 (required for some tokens like USDT when changing existing approval)
+    resetApprovalLst: {
+      name: (ctx) => {
+        const branch = getBranch(ctx.request.branchId);
+        return `Reset ${branch.symbol} Approval`;
+      },
+      Status: (props) => (
+        <TransactionStatus
+          {...props}
+          approval="approve-only"
+        />
+      ),
+      async commit(ctx) {
+        const { branch, controllerAddress } = await resolveBorrowController(ctx);
+        const { CollToken } = branch.contracts;
+
+        return ctx.writeContract({
+          ...CollToken,
+          functionName: "approve",
+          args: [
+            controllerAddress,
+            0n, // Reset to 0
+          ],
+        });
+      },
+      async verify(ctx, hash) {
+        await verifyTransaction(ctx.wagmiConfig, hash, ctx.isSafe);
+      },
+    },
+
     // Approve LST
     approveLst: {
       name: (ctx) => {
@@ -241,17 +322,26 @@ export const openBorrowPosition: FlowDeclaration<OpenBorrowPositionRequest> = {
         />
       ),
       async commit(ctx) {
-        const branch = getBranch(ctx.request.branchId);
-        const { LeverageLSTZapper, LeverageWrappedTokenZapper, CollToken } = branch.contracts;
+        const { branch, controllerAddress } = await resolveBorrowController(ctx);
+        const { CollToken } = branch.contracts;
+
+        const approvalAmount = ctx.preferredApproveMethod === "approve-infinite"
+          ? maxUint256
+          : (branch.decimals < 18 ? convert18ToDecimals(ctx.request.collAmount[0], branch.decimals, "up") : ctx.request.collAmount[0]);
+
+        console.log("🔍 APPROVAL DEBUG:", {
+          preferredMethod: ctx.preferredApproveMethod,
+          collAmount: ctx.request.collAmount[0].toString(),
+          approvalAmount: approvalAmount.toString(),
+          branchDecimals: branch.decimals,
+        });
 
         return ctx.writeContract({
           ...CollToken,
           functionName: "approve",
           args: [
-            branch.decimals < 18 ? LeverageWrappedTokenZapper.address : LeverageLSTZapper.address,
-            ctx.preferredApproveMethod === "approve-infinite"
-              ? maxUint256 // infinite approval
-              : (branch.decimals < 18 ? convert18ToDecimals(ctx.request.collAmount[0], branch.decimals) : ctx.request.collAmount[0]), // exact amount
+            controllerAddress,
+            approvalAmount, // exact amount (round up for safety)
           ],
         });
       },
@@ -273,14 +363,68 @@ export const openBorrowPosition: FlowDeclaration<OpenBorrowPositionRequest> = {
           interestRate: ctx.request.annualInterestRate[0],
         });
 
-        const branch = getBranch(ctx.request.branchId);
+        const {
+          branch,
+          controllerAddress,
+          txCollAmount,
+          useBorrowerOperations,
+        } = await resolveBorrowController(ctx);
+
+        console.log("🔍 TRANSACTION DEBUG:", {
+          collAmount: ctx.request.collAmount[0].toString(),
+          txCollAmount: txCollAmount.toString(),
+          branchDecimals: branch.decimals,
+          controller: controllerAddress,
+          useBorrowerOperations,
+        });
+
+        if (useBorrowerOperations) {
+          if (ctx.request.interestRateDelegate) {
+            return ctx.writeContract({
+              ...branch.contracts.BorrowerOperations,
+              functionName: "openTroveAndJoinInterestBatchManager",
+              args: [{
+                owner: ctx.request.owner,
+                ownerIndex: BigInt(ctx.request.ownerIndex),
+                collAmount: txCollAmount,
+                boldAmount: ctx.request.boldAmount[0],
+                upperHint,
+                lowerHint,
+                interestBatchManager: ctx.request.interestRateDelegate,
+                maxUpfrontFee: ctx.request.maxUpfrontFee[0],
+                addManager: ADDRESS_ZERO,
+                removeManager: ADDRESS_ZERO,
+                receiver: ADDRESS_ZERO,
+              }],
+            });
+          }
+
+          return ctx.writeContract({
+            ...branch.contracts.BorrowerOperations,
+            functionName: "openTrove",
+            args: [
+              ctx.request.owner,
+              BigInt(ctx.request.ownerIndex),
+              txCollAmount,
+              ctx.request.boldAmount[0],
+              upperHint,
+              lowerHint,
+              ctx.request.annualInterestRate[0],
+              ctx.request.maxUpfrontFee[0],
+              ADDRESS_ZERO,
+              ADDRESS_ZERO,
+              ADDRESS_ZERO,
+            ],
+          });
+        }
+
         return ctx.writeContract({
           ...(branch.decimals < 18 ? branch.contracts.LeverageWrappedTokenZapper : branch.contracts.LeverageLSTZapper),
           functionName: "openTroveWithRawETH" as const,
           args: [{
             owner: ctx.request.owner,
             ownerIndex: BigInt(ctx.request.ownerIndex),
-            collAmount: branch.decimals < 18 ? convert18ToDecimals(ctx.request.collAmount[0], branch.decimals) : ctx.request.collAmount[0],
+            collAmount: txCollAmount,
             boldAmount: ctx.request.boldAmount[0],
             upperHint,
             lowerHint,
@@ -375,7 +519,7 @@ export const openBorrowPosition: FlowDeclaration<OpenBorrowPositionRequest> = {
   },
 
   async getSteps(ctx) {
-    const branch = getBranch(ctx.request.branchId);
+    const { branch, controllerAddress } = await resolveBorrowController(ctx);
 
     // // ETH doesn't need approval
     // if (branch.symbol === "ETH") {
@@ -383,16 +527,25 @@ export const openBorrowPosition: FlowDeclaration<OpenBorrowPositionRequest> = {
     // }
 
     // Check if approval is needed
-    const zapperAddress = branch.decimals < 18 ? branch.contracts.LeverageWrappedTokenZapper.address : branch.contracts.LeverageLSTZapper.address;
     const allowance = await readContract(ctx.wagmiConfig, {
       ...branch.contracts.CollToken,
       functionName: "allowance",
-      args: [ctx.account, zapperAddress],
+      args: [ctx.account, controllerAddress],
     });
 
     const steps: string[] = [];
 
-    if (allowance < (branch.decimals < 18 ? convert18ToDecimals(ctx.request.collAmount[0], branch.decimals) : ctx.request.collAmount[0])) {
+    // Check allowance against the approval amount (with "up" rounding) to ensure sufficient approval
+    const requiredApproval = branch.decimals < 18
+      ? convert18ToDecimals(ctx.request.collAmount[0], branch.decimals, "up")
+      : ctx.request.collAmount[0];
+
+    if (allowance < requiredApproval) {
+      // If there's an existing non-zero allowance, reset it to 0 first
+      // This is required for some tokens (like USDT) when changing approval
+      if (allowance > 0n) {
+        steps.push("resetApprovalLst");
+      }
       steps.push("approveLst");
     }
 

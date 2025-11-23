@@ -199,7 +199,7 @@ export function PanelUpdateBorrowPosition({
                   <TextButton
                     label={`Max ${fmtnum(collMax, getTokenDisplayDecimals(collToken.symbol))} ${TOKENS_BY_SYMBOL[collToken.symbol]?.name ?? collToken.symbol}`}
                     onClick={() => {
-                      depositChange.setValue(dn.toString(collMax));
+                      depositChange.setValue(dn.toString(collMax, { digits: 18 }));
                     }}
                   />
                 ),
@@ -322,7 +322,7 @@ export function PanelUpdateBorrowPosition({
                     <TextButton
                       label={`Max ${fmtnum(boldMax)} ${WHITE_LABEL_CONFIG.tokens.mainToken.symbol}`}
                       onClick={() => {
-                        debtChange.setValue(dn.toString(boldMax));
+                        debtChange.setValue(dn.toString(boldMax, { digits: 18 }));
                       }}
                     />
                   )

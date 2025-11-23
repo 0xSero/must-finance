@@ -157,7 +157,7 @@ export function PanelUpdateDeposit({
                       : null}
                     onClick={() => {
                       if (boldBalance.data) {
-                        setValue(dn.toString(boldBalance.data));
+                        setValue(dn.toString(boldBalance.data, { digits: 18 }));
                       }
                     }}
                   />
@@ -166,7 +166,7 @@ export function PanelUpdateDeposit({
                   <TextButton
                     label={`Max ${fmtnum(position.deposit, 2)} ${WHITE_LABEL_CONFIG.tokens.mainToken.symbol}`}
                     onClick={() => {
-                      setValue(dn.toString(position.deposit));
+                      setValue(dn.toString(position.deposit, { digits: 18 }));
                       setClaimRewards(true);
                     }}
                   />

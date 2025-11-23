@@ -119,7 +119,7 @@ export function RedeemScreen() {
                       label={`Max ${fmtnum(boldBalance.data)} ${WHITE_LABEL_CONFIG.tokens.mainToken.symbol}`}
                       onClick={() => {
                         if (boldBalance.data) {
-                          amount.setValue(dn.toString(boldBalance.data));
+                          amount.setValue(dn.toString(boldBalance.data, { digits: 18 }));
                         }
                       }}
                     />
